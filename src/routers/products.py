@@ -18,24 +18,24 @@ router = APIRouter(prefix="/api/products", tags=["products"])
 
 class ProductCreate(BaseModel):
     name: str; description: Optional[str] = None
-    category: str; sku: str; barcode: Optional[str] = None
-    unit_cost: float = Query(ge=0); unit_price: float = Query(ge=0)
-    quantity_in_stock: int = Query(ge=0); reorder_level: int = Query(ge=0, default=10)
+    category: str; sku: str; supplier: Optional[str] = None
+    cost_price: float = Query(ge=0); retail_price: float = Query(ge=0)
+    stock_level: int = Query(ge=0); reorder_threshold: int = Query(ge=0, default=10)
     is_active: bool = True
 
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None; description: Optional[str] = None
-    category: Optional[str] = None; sku: Optional[str] = None; barcode: Optional[str] = None
-    unit_cost: Optional[float] = None; unit_price: Optional[float] = None
-    quantity_in_stock: Optional[int] = None; reorder_level: Optional[int] = None
+    category: Optional[str] = None; sku: Optional[str] = None; supplier: Optional[str] = None
+    cost_price: Optional[float] = None; retail_price: Optional[float] = None
+    stock_level: Optional[int] = None; reorder_threshold: Optional[int] = None
     is_active: Optional[bool] = None
 
 
 class ProductResponse(BaseModel):
     id: str; name: str; description: Optional[str]; category: str; sku: str
-    barcode: Optional[str]; unit_cost: float; unit_price: float
-    quantity_in_stock: int; reorder_level: int; is_active: bool
+    supplier: Optional[str]; cost_price: float; retail_price: float
+    stock_level: int; reorder_threshold: int; is_active: bool
     created_at: str; updated_at: str
 
 
@@ -46,9 +46,9 @@ def create_product(data: ProductCreate, db: Session = Depends(get_db), cu: dict 
         raise HTTPException(400, f"SKU {data.sku} already exists")
     now = datetime.utcnow()
     p = Product(id=str(uuid.uuid4()), name=data.name, description=data.description,
-                category=data.category, sku=data.sku, barcode=data.barcode,
-                unit_cost=data.unit_cost, unit_price=data.unit_price,
-                quantity_in_stock=data.quantity_in_stock, reorder_level=data.reorder_level,
+                category=data.category, sku=data.sku, supplier=data.supplier,
+                cost_price=data.cost_price, retail_price=data.retail_price,
+                stock_level=data.stock_level, reorder_threshold=data.reorder_threshold,
                 is_active=data.is_active, created_at=now, updated_at=now)
     db.add(p); db.commit(); db.refresh(p)
     return _prod_response(p)
@@ -100,27 +100,28 @@ async def import_products_csv(file: UploadFile = File(...), db: Session = Depend
             continue
         try:
             sku = row["sku"].strip()
-            unit_cost = float(row["unit_cost"])
-            unit_price = float(row["unit_price"])
-            qty = int(row.get("quantity_in_stock", 0))
+            cost = float(row["unit_cost"]); price = float(row["unit_price"])
+            qty = int(row.get("stock_level", row.get("quantity_in_stock", 0)))
             existing = db.query(Product).filter(Product.sku == sku).first()
             now = datetime.utcnow()
             if existing:
-                for field in ("name", "category", "unit_cost", "unit_price", "quantity_in_stock"):
-                    if field in row and row[field]:
-                        setattr(existing, field, float(row[field]) if field in ("unit_cost","unit_price") else int(row[field]))
+                existing.name = row["name"].strip()
+                existing.category = row["category"].strip()
+                existing.cost_price = cost; existing.retail_price = price
+                existing.stock_level = qty
+                if "supplier" in row and row["supplier"].strip():
+                    existing.supplier = row["supplier"].strip()
                 existing.updated_at = now
                 updated += 1
             else:
                 p = Product(
                     id=str(uuid.uuid4()), name=row["name"].strip(), category=row["category"].strip(),
-                    sku=sku, barcode=row.get("barcode","").strip() or None,
-                    unit_cost=unit_cost, unit_price=unit_price,
-                    quantity_in_stock=qty, reorder_level=int(row.get("reorder_level", 10)),
+                    sku=sku, supplier=row.get("supplier", "").strip() or None,
+                    cost_price=cost, retail_price=price,
+                    stock_level=qty, reorder_threshold=int(row.get("reorder_threshold", 10)),
                     is_active=True, created_at=now, updated_at=now,
                 )
-                db.add(p)
-                created += 1
+                db.add(p); created += 1
         except Exception as e:
             errors.append(f"Row {row_num}: {e}")
     db.commit()
@@ -134,24 +135,24 @@ def log_transaction(prod_id: str, quantity_change: int = Query(...),
     """Record stock movement (sale, return, adjustment, restock)."""
     p = db.query(Product).filter(Product.id == prod_id).first()
     if not p: raise HTTPException(404, "Product not found")
-    if p.quantity_in_stock + quantity_change < 0:
-        raise HTTPException(400, f"Insufficient stock: have {p.quantity_in_stock}, trying to remove {abs(quantity_change)}")
-    p.quantity_in_stock += quantity_change
+    if p.stock_level + quantity_change < 0:
+        raise HTTPException(400, f"Insufficient stock: have {p.stock_level}, trying to remove {abs(quantity_change)}")
+    p.stock_level += quantity_change
     tx = ProductTransaction(
         id=str(uuid.uuid4()), product_id=prod_id, order_id=order_id,
-        quantity_change=quantity_change, transaction_type=transaction_type,
+        quantity=quantity_change, transaction_type=transaction_type,
         created_at=datetime.utcnow(),
     )
     db.add(tx); db.commit(); db.refresh(p)
-    return {"product_id": prod_id, "new_stock": p.quantity_in_stock, "transaction_id": str(tx.id)}
+    return {"product_id": prod_id, "new_stock": p.stock_level, "transaction_id": str(tx.id)}
 
 
 def _prod_response(p: Product) -> dict:
     return {
         "id": str(p.id), "name": p.name, "description": p.description,
-        "category": p.category, "sku": p.sku, "barcode": p.barcode,
-        "unit_cost": float(p.unit_cost or 0), "unit_price": float(p.unit_price or 0),
-        "quantity_in_stock": p.quantity_in_stock, "reorder_level": p.reorder_level,
+        "category": p.category, "sku": p.sku, "supplier": p.supplier,
+        "cost_price": float(p.cost_price or 0), "retail_price": float(p.retail_price or 0),
+        "stock_level": p.stock_level, "reorder_threshold": p.reorder_threshold,
         "is_active": p.is_active,
         "created_at": p.created_at.isoformat() if p.created_at else "",
         "updated_at": p.updated_at.isoformat() if p.updated_at else "",
