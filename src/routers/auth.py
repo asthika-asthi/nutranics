@@ -1,3 +1,5 @@
+import uuid
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -40,7 +42,6 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Update last login
-    from datetime import datetime
     user.last_login = datetime.utcnow()
     db.commit()
 
@@ -73,27 +74,22 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
 
     practitioner_id = None
 
-    # If creating a practitioner, also create the Practitioner record
-    if data.role in ("practitioner", "admin"):
-        if not data.practitioner_name:
-            raise HTTPException(status_code=400, detail="practitioner_name required")
-        import uuid
-        from datetime import datetime
-        practitioner = Practitioner(
-            id=str(uuid.uuid4()),
-            name=data.practitioner_name,
-            email=data.practitioner_email or data.email,
-            role=data.role,
-            is_active=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-        db.add(practitioner)
-        db.flush()
-        practitioner_id = practitioner.id
+    # Always create a Practitioner record so practitioner_id is always set
+    if not data.practitioner_name:
+        raise HTTPException(status_code=400, detail="practitioner_name required")
+    practitioner = Practitioner(
+        id=str(uuid.uuid4()),
+        name=data.practitioner_name,
+        email=data.practitioner_email or data.email,
+        role=data.role,
+        is_active=True,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(practitioner)
+    db.flush()
+    practitioner_id = practitioner.id
 
-    import uuid
-    from datetime import datetime
     user = User(
         id=str(uuid.uuid4()),
         email=data.email,
