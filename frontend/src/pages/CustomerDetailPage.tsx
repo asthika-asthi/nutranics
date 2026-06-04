@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import API from "../lib/api";
+import { queueOfflineNote } from "../lib/offlineDB";
 
 type Tab = "overview" | "notes" | "tests" | "plans" | "invoices";
 
@@ -20,7 +21,13 @@ export default function CustomerDetailPage() {
   const { data: subscriptions } = useQuery({ queryKey: ["plans", id], queryFn: () => API.get(`/subscriptions?customer_id=${id}`).then(r => r.data), enabled: tab === "plans" });
 
   const addNote = useMutation({
-    mutationFn: (payload: any) => API.post(`/customers/${id}/notes`, payload),
+    mutationFn: async (payload: any) => {
+      if (!navigator.onLine) {
+        await queueOfflineNote({ ...payload, customer_id: id!, created_at: new Date().toISOString() });
+        return { offline: true };
+      }
+      return API.post(`/customers/${id}/notes`, payload);
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["notes", id] }); setNewNote(""); },
   });
 
