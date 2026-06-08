@@ -187,7 +187,7 @@ def seed(db: Session):
             )
             db.add(slot)
             slot_date += timedelta(days=14)
-        print(f"  Subscription: {cust.name} → {plan.name}")
+        print(f"  Subscription: {cust.name} -> {plan.name}")
     db.flush()
 
     # Products

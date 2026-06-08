@@ -15,10 +15,14 @@ export default function LoginPage() {
     setError("");
     try {
       const { data } = await API.post("/auth/login", { email, password });
-      const token: string = data.access_token;
-      // Fetch profile
-      const profile = await API.get("/auth/me");
-      setAuth(profile.data, token);
+      const user = {
+        id: data.user_id,
+        email,
+        name: email,
+        role: data.role,
+        practitioner_id: data.practitioner_id ?? null,
+      };
+      setAuth(user, data.access_token);
       navigate("/");
     } catch (err: any) {
       setError(err.response?.data?.detail || "Login failed");
