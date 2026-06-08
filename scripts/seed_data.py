@@ -96,7 +96,7 @@ def seed(db: Session):
 
     # Rooms
     rooms = []
-    for name in ["Room A — IV Suite", "Room B — Consultation", "Room C — Therapy Room"]:
+    for name in ["Room A - IV Suite", "Room B - Consultation", "Room C - Therapy Room"]:
         r = Room(id=str(uuid.uuid4()), name=name, is_active=True)
         db.add(r)
         rooms.append(r)
@@ -214,10 +214,9 @@ def seed(db: Session):
     print(f"  Products: {len(products_data)} created")
 
     db.commit()
-    print("\n✅ Seed complete!")
-    print(f"   Owner login: admin@wellnessclinic.com / Demo1234!")
-    print(f"   Practitioner login: s.chen@wellnessclinic.com / Demo1234!")
-    print(f"   All customer passwords: Demo1234!")
+    print("\nSeed complete!")
+    print("   Owner login:        admin@wellnessclinic.com / Demo1234!")
+    print("   Practitioner login: s.chen@wellnessclinic.com / Demo1234!")
 
 
 if __name__ == "__main__":
